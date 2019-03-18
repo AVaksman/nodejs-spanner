@@ -10,7 +10,7 @@
     "src/*.ts",
     "src/v1/*.d.ts",
     "src/**/*.js",
-    "src/**/*.json",
+    // "src/**/*.json",
     "test/*.ts",
     "system-test/*.ts",
   ]

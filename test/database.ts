@@ -1259,7 +1259,7 @@ describe('Database', () => {
 
     let getReadSessionStub: sinon.SinonStub<[ReadSessionCallback], void>;
     let snapshotStub: sinon.SinonStub<[TimestampBounds?], FakeTransaction>;
-    let runStreamStub: sinon.SinonStub<[string|{}], Transform>;
+    let runStreamStub: sinon.SinonStub<[string | {}], Transform>;
 
     beforeEach(() => {
       fakePool = database.pool_;
@@ -1754,7 +1754,7 @@ describe('Database', () => {
     let getReadSessionStub: sinon.SinonStub<[ReadSessionCallback], void>;
     let partitionedDmlStub: sinon.SinonStub<[], FakeTransaction>;
     let beginStub: sinon.SinonStub<[Function], void>;
-    let runUpdateStub: sinon.SinonStub<[string|{}, Function], void>;
+    let runUpdateStub: sinon.SinonStub<[string | {}, Function], void>;
 
     beforeEach(() => {
       fakePool = database.pool_;

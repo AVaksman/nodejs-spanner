@@ -36,6 +36,15 @@ import {Session} from './session';
 import {SessionPool} from './session-pool';
 import {Table} from './table';
 import {PartitionedDml, Snapshot, Transaction} from './transaction';
+import * as gax from 'google-gax';
+
+export type Client = string;
+export interface RequestConfig {
+  client: Client;
+  method: string;
+  reqOpts?: object;
+  gaxOpts?: gax.CallOptions;
+}
 
 // Import the clients for each version supported by this package.
 const gapic = Object.freeze({
@@ -172,10 +181,13 @@ const gcpApiConfig = require('./spanner_grpc_config.json');
  *
  * @param {ClientConfig} [options] Configuration options.
  */
-class Spanner extends Service {
+class Spanner {
   options: GoogleAuthOptions;
   auth: GoogleAuth;
   clients_: Map<string, {}>;
+  projectId: string;
+  // tslint:disable-next-line variable-name
+  Promise: PromiseConstructor;
   instances_: Map<string, {}>;
   getInstancesStream: Function;
 
@@ -225,7 +237,9 @@ class Spanner extends Service {
       scopes: ['https://www.googleapis.com/auth/cloud-platform'],
       packageJson: require('../../package.json'),
     } as {} as GrpcServiceConfig;
-    super(config, options);
+    // super(config, options);
+    this.Promise = Promise;
+    this.projectId = options.projectId || '{{projectId}}';
     this.options = options;
     this.auth = new GoogleAuth(this.options);
     this.clients_ = new Map();
@@ -688,7 +702,7 @@ class Spanner extends Service {
    * @param {object} config Request config
    * @param {function} callback Callback function
    */
-  prepareGapicRequest_(config, callback) {
+  prepareGapicRequest_(config: RequestConfig, callback) {
     this.auth.getProjectId((err, projectId) => {
       if (err) {
         callback(err);

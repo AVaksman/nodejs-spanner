@@ -22,7 +22,7 @@ import * as extend from 'extend';
 import * as proxyquire from 'proxyquire';
 import {util} from '@google-cloud/common-grpc';
 import * as pfy from '@google-cloud/promisify';
-import * as inst from '../src/instance';
+import {Any} from '../src/common';
 
 const fakePaginator = {
   paginator: {
@@ -59,8 +59,8 @@ class FakeGrpcServiceObject {
 
 describe('Instance', () => {
   // tslint:disable-next-line variable-name
-  let Instance: typeof inst.Instance;
-  let instance: inst.Instance;
+  let Instance: Any;
+  let instance: Any;
 
   const SPANNER = {
     request: util.noop,
@@ -704,7 +704,7 @@ describe('Instance', () => {
     describe('success', () => {
       const DATABASES = [
         {
-          name: 'database-name',
+          formattedName_: 'database-name',
         },
       ];
 
@@ -721,10 +721,9 @@ describe('Instance', () => {
         const fakeDatabaseInstance = {};
 
         instance.database = (name) => {
-          assert.strictEqual(name, DATABASES[0].name);
+          assert.strictEqual(name, DATABASES[0].formattedName_);
           return fakeDatabaseInstance;
         };
-
         instance.getDatabases(QUERY, (...args) => {
           assert.ifError(args[0]);
           assert.strictEqual(args[0], REQUEST_RESPONSE_ARGS[0]);

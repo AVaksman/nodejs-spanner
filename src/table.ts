@@ -25,7 +25,7 @@ import {Json} from './codec';
 import {Database} from './database';
 import {DatabaseAdminClient as d, SpannerClient as s} from './v1';
 import {PartialResultStream, Row} from './partial-result-stream';
-import {Snapshot, ReadRequest, Transaction, TimestampBounds} from './transaction';
+import {ReadRequest, TimestampBounds} from './transaction';
 
 export type Key = string|string[];
 

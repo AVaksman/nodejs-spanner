@@ -17,14 +17,50 @@
 'use strict';
 
 import * as arrify from 'arrify';
+import * as extend from 'extend';
 const common = require('@google-cloud/common-grpc');
-import {ServiceObjectConfig} from '@google-cloud/common';
+import snakeCase = require('lodash.snakecase');
+import {ServiceObjectConfig, Metadata, GetConfig} from '@google-cloud/common';
 import {paginator} from '@google-cloud/paginator';
 import {promisifyAll} from '@google-cloud/promisify';
-import * as extend from 'extend';
-import * as is from 'is';
-import snakeCase = require('lodash.snakecase');
+import {Operation as GaxOperation} from 'google-gax/build/src/longrunning';
+import {ServiceError} from 'grpc';
+
+import {google as instance_admin_client} from '../proto/spanner_instance_admin';
+import {google as database_admin_client} from '../proto/spanner_database_admin';
+
 import {Database} from './database';
+import {SessionPoolOptions, SessionPoolInterface} from './session-pool';
+import {Any} from './common';
+import {Spanner} from '.';
+
+export interface CreateDatabaseCallback {
+  (err?: Error|null, database?: Database|null,
+   operation?: instance_admin_client.longrunning.Operation|null,
+   resp?: database_admin_client.spanner.admin.database.v1.Database): void;
+}
+export interface CreateDatabaseRequest {
+  extraStatements?: string[]|null;
+  poolOptions?: SessionPoolOptions;
+  poolCtor?: SessionPoolInterface;
+  schema?: string;
+}
+export interface ExistsCallback {
+  (err?: Error|null, exists?: boolean|null): void;
+}
+export interface GetDatabasesCallback {
+  (err: Error|null|undefined, databases: Database[],
+   apiResponse: database_admin_client.spanner.admin.database.v1.Database[]):
+      void;
+}
+export interface GetInstanceCallback {
+  (err?: Error|null, instance?: Instance, metadata?: instance_admin_client.spanner.admin.instance.v1.IInstance): void;
+}
+export interface GetInstanceMetadataCallback {
+  (err: ServiceError|null, metadata?: instance_admin_client.spanner.admin.instance.v1.IInstance,
+   apiResponse?: instance_admin_client.spanner.admin.instance.v1.IInstance): void;
+}
+export interface UpdateInstanceRequest {}
 
 /**
  * The {@link Instance} class represents a [Cloud Spanner
@@ -43,7 +79,7 @@ import {Database} from './database';
  * const instance = spanner.instance('my-instance');
  */
 class Instance extends common.ServiceObject {
-  constructor(spanner, name) {
+  constructor(spanner: Spanner, name: string) {
     const formattedName_ = Instance.formatName_(spanner.projectId, name);
     const methods = {
       /**
@@ -101,15 +137,28 @@ class Instance extends common.ServiceObject {
        */
       id: name,
       methods,
-      createMethod(_, options, callback) {
-        spanner.createInstance(formattedName_, options, callback);
-      },
+      createMethod(
+          _: {},
+          options: instance_admin_client.spanner.admin.instance.v1
+              .CreateInstanceRequest,
+          callback: instance_admin_client.spanner.admin.instance.v1
+              .InstanceAdmin.CreateInstanceCallback): void |
+          Promise<instance_admin_client.longrunning.Operation> {
+            spanner.createInstance(formattedName_, options, callback);
+          },
     } as {} as ServiceObjectConfig);
     this.formattedName_ = formattedName_;
     this.request = spanner.request.bind(spanner);
     this.requestStream = spanner.requestStream.bind(spanner);
     this.databases_ = new Map();
   }
+
+  createDatabase(name: string, options?: CreateDatabaseRequest): Promise<
+      [Database, GaxOperation, instance_admin_client.longrunning.Operation]>;
+  createDatabase(name: string, callback: CreateDatabaseCallback): void;
+  createDatabase(
+      name: string, options: CreateDatabaseRequest,
+      callback: CreateDatabaseCallback): void;
   /**
    * Config for the new database.
    *
@@ -194,45 +243,52 @@ class Instance extends common.ServiceObject {
    * region_tag:spanner_create_database
    * Full example:
    */
-  createDatabase(name, options?, callback?) {
+  createDatabase(
+      name: string,
+      optionsOrCallback?: CreateDatabaseRequest|CreateDatabaseCallback,
+      cb?: CreateDatabaseCallback):
+      void|Promise<[
+        Database, GaxOperation, instance_admin_client.longrunning.Operation
+      ]> {
     if (!name) {
       throw new Error('A name is required to create a database.');
     }
-    if (is.function(options))
-      {
-        callback = options;
-        options = {};
-      }
-      options = options || {};
-      const poolOptions = options.poolOptions;
-      delete options.poolOptions;
-      const poolCtor = options.poolCtor;
-      delete options.poolCtor;
-      const reqOpts = extend(
-          {
-            parent: this.formattedName_,
-            createStatement: 'CREATE DATABASE `' + name.split('/').pop() + '`',
-          },
-          options);
-      if (reqOpts.schema) {
-        reqOpts.extraStatements = arrify(reqOpts.schema);
-        delete reqOpts.schema;
-      }
-      this.request(
-          {
-            client: 'DatabaseAdminClient',
-            method: 'createDatabase',
-            reqOpts,
-          },
-          (err, operation, resp) => {
-            if (err) {
-              callback(err, null, null, resp);
-              return;
-            }
-            const database = this.database(name, poolOptions || poolCtor);
-            callback(null, database, operation, resp);
-          });
+    const options =
+        typeof optionsOrCallback === 'object' ? optionsOrCallback : {};
+    const callback =
+        typeof optionsOrCallback === 'function' ? optionsOrCallback : cb!;
+
+    const poolOptions = options.poolOptions;
+    delete options.poolOptions;
+    const poolCtor = options.poolCtor;
+    delete options.poolCtor;
+    const reqOpts = extend(
+        {
+          parent: this.formattedName_,
+          createStatement: 'CREATE DATABASE `' + name.split('/').pop() + '`',
+        },
+        options);
+    if (reqOpts.schema) {
+      reqOpts.extraStatements = arrify(reqOpts.schema);
+      delete reqOpts.schema;
+    }
+    this.request(
+        {
+          client: 'DatabaseAdminClient',
+          method: 'createDatabase',
+          reqOpts: reqOpts as database_admin_client.spanner.admin.database.v1.ICreateDatabaseRequest,
+        },
+        (err: Error, operation: instance_admin_client.longrunning.Operation,
+         resp: database_admin_client.spanner.admin.database.v1.Database) => {
+          if (err) {
+            callback(err, null, null, resp);
+            return;
+          }
+          const database = this.database(name, poolOptions || poolCtor);
+          callback(null, database, operation, resp);
+        });
   }
+
   /**
    * Get a reference to a Database object.
    *
@@ -250,16 +306,21 @@ class Instance extends common.ServiceObject {
    * const instance = spanner.instance('my-instance');
    * const database = instance.database('my-database');
    */
-  database(name, poolOptions?) {
-      if (!name) {
-        throw new Error('A name is required to access a Database object.');
-      }
-      const key = name.split('/').pop();
-      if (!this.databases_.has(key)) {
-        this.databases_.set(key, new Database(this, name, poolOptions));
-      }
-      return this.databases_.get(key);
+  database(name: string, poolOptions?: SessionPoolOptions|SessionPoolInterface):
+      Database {
+    if (!name) {
+      throw new Error('A name is required to access a Database object.');
+    }
+    const key = name.split('/').pop();
+    if (!this.databases_.has(key)) {
+      this.databases_.set(key, new Database(this, name, poolOptions));
+    }
+    return this.databases_.get(key);
   }
+
+  delete(): Promise<instance_admin_client.protobuf.Empty>;
+  delete(callback: instance_admin_client.spanner.admin.instance.v1.InstanceAdmin
+             .DeleteInstanceCallback): void;
   /**
    * @typedef {array} DeleteInstanceResponse
    * @property {object} 0 The full API response.
@@ -301,33 +362,42 @@ class Instance extends common.ServiceObject {
    *   const apiResponse = data[0];
    * });
    */
-  delete(callback) {
-      const reqOpts = {
-        name: this.formattedName_,
-      };
-      Promise
-          .all(
-              // tslint:disable-next-line no-any
-              Array.from(this.databases_.values()).map((database: any) => {
-                return database.close();
-              }))
-          .catch(common.util.noop)
-          .then(() => {
-            this.databases_.clear();
-            this.request(
-                {
-                  client: 'InstanceAdminClient',
-                  method: 'deleteInstance',
-                  reqOpts,
-                },
-                (err, resp) => {
-                  if (!err) {
-                    this.parent.instances_.delete(this.id);
-                  }
-                  callback(err, resp);
-                });
-          });
+  delete(callback?: instance_admin_client.spanner.admin.instance.v1
+             .InstanceAdmin.DeleteInstanceCallback):
+      void|Promise<instance_admin_client.protobuf.Empty> {
+    const reqOpts: instance_admin_client.spanner.admin.instance.v1
+        .IDeleteInstanceRequest = {
+      name: this.formattedName_,
+    };
+    Promise
+        .all(Array.from(this.databases_.values())
+                 .map(
+                     (database: Any):
+                         void => {
+                           return database.close();
+                         }))
+        .catch(common.util.noop)
+        .then(() => {
+          this.databases_.clear();
+          this.request(
+              {
+                client: 'InstanceAdminClient',
+                method: 'deleteInstance',
+                reqOpts,
+              },
+              (err: Error,
+               resp: database_admin_client.spanner.admin.database.v1
+                   .Database) => {
+                if (!err) {
+                  this.parent.instances_.delete(this.id);
+                }
+                callback!(err, resp);
+              });
+        });
   }
+
+  exists(): Promise<boolean>;
+  exists(callback: ExistsCallback): void;
   /**
    * @typedef {array} InstanceExistsResponse
    * @property {boolean} 0 Whether the {@link Instance} exists.
@@ -359,19 +429,26 @@ class Instance extends common.ServiceObject {
    *   const exists = data[0];
    * });
    */
-  exists(callback) {
-      const NOT_FOUND = 5;
+  exists(callback?: ExistsCallback): void|Promise<boolean> {
+    const NOT_FOUND = 5;
 
-      this.getMetadata(err => {
-        if (err && err.code !== NOT_FOUND) {
-          callback(err, null);
-          return;
-        }
+    this.getMetadata(err => {
+      if (err && err.code !== NOT_FOUND) {
+        callback!(err, null);
+        return;
+      }
 
-        const exists = !err || err.code !== NOT_FOUND;
-        callback(null, exists);
-      });
+      const exists = !err || err.code !== NOT_FOUND;
+      callback!(null, exists);
+    });
   }
+
+  get(options?: GetConfig): Promise<[
+    Instance,
+    instance_admin_client.spanner.admin.instance.v1.IInstance
+  ]>;
+  get(callback: GetInstanceCallback): void;
+  get(options: GetConfig, callback: GetInstanceCallback): void;
   /**
    * @typedef {array} GetInstanceResponse
    * @property {Instance} 0 The {@link Instance}.
@@ -415,32 +492,50 @@ class Instance extends common.ServiceObject {
    *   const apiResponse = data[0];
    * });
    */
-  get(options, callback?) {
-      if (is.fn(options)) {
-        callback = options;
-        options = {};
-      }
-      this.getMetadata((err, metadata) => {
-        if (err) {
-          if (err.code === 5 && options.autoCreate) {
-            this.create(options, (err, database, operation) => {
-              if (err) {
-                callback(err);
-                return;
-              }
-              operation.on('error', callback).on('complete', metadata => {
-                this.metadata = metadata;
-                callback(null, this, metadata);
+  get(optionsOrCallback?: GetConfig|GetInstanceCallback,
+      cb?: GetInstanceCallback):
+      void|Promise<[
+        Instance,
+        instance_admin_client.spanner.admin.instance.v1.IInstance
+      ]> {
+    const callback =
+        typeof optionsOrCallback === 'function' ? optionsOrCallback : cb!;
+    const options = typeof optionsOrCallback === 'object' ? optionsOrCallback : {};
+
+    this.getMetadata((err, metadata) => {
+      if (err) {
+        if (err.code === 5 && options.autoCreate) {
+          this.create(
+              options,
+              (err: Error, database: Database,
+               operation: instance_admin_client.longrunning.Operations) => {
+                if (err) {
+                  callback(err);
+                  return;
+                }
+                operation.on('error', callback)
+                    .on('complete', (metadata: instance_admin_client.spanner.admin.instance.v1.IInstance) => {
+                      this.metadata = metadata;
+                      callback(null, this, metadata);
+                    });
               });
-            });
-            return;
-          }
-          callback(err);
           return;
         }
-        callback(null, this, metadata);
-      });
+        callback(err);
+        return;
+      }
+      callback!(null, this, metadata);
+    });
   }
+
+  getDatabases(query: (string[]|{})): Promise<[
+    database_admin_client.spanner.admin.database.v1.Database[],
+    instance_admin_client.longrunning.Operations
+  ]>;
+  getDatabases(
+      query: (string[]|{}),
+      cb?: database_admin_client.spanner.admin.database.v1.DatabaseAdmin
+          .ListDatabasesCallback): void;
   /**
    * Query object for listing databases.
    *
@@ -508,34 +603,51 @@ class Instance extends common.ServiceObject {
    *   const databases = data[0];
    * });
    */
-  getDatabases(query, callback?) {
-      const self = this;
-      if (is.fn(query)) {
-        callback = query;
-        query = {};
-      }
-      const reqOpts = extend({}, query, {
-        parent: this.formattedName_,
-      });
-      this.request(
-          {
-            client: 'DatabaseAdminClient',
-            method: 'listDatabases',
-            reqOpts,
-            gaxOpts: query,
-          },
-          // tslint:disable-next-line only-arrow-functions
-          function(err, databases) {
-            if (databases) {
-              arguments[1] = databases.map(database => {
-                const databaseInstance = self.database(database.name);
-                databaseInstance.metadata = database;
-                return databaseInstance;
-              });
-            }
-            callback.apply(null, arguments);
-          });
+  getDatabases(
+      query: (string[]|{}),
+      cb?: database_admin_client.spanner.admin.database.v1.DatabaseAdmin
+          .ListDatabasesCallback):
+      void|Promise<[
+        database_admin_client.spanner.admin.database.v1.Database[],
+        instance_admin_client.longrunning.Operations
+      ]> {
+    const self = this;
+    const callback = typeof query === 'function' ? query : cb!;
+    query = typeof query === 'object' && query ? query : {};
+
+    const reqOpts:
+        database_admin_client.spanner.admin.database.v1.IListDatabasesRequest =
+        extend({}, query, {
+          parent: this.formattedName_,
+        });
+    this.request(
+        {
+          client: 'DatabaseAdminClient',
+          method: 'listDatabases',
+          reqOpts,
+          gaxOpts: query,
+        },
+        // tslint:disable-next-line only-arrow-functions
+        function(
+            err: Error,
+            databases:
+                database_admin_client.spanner.admin.database.v1.IDatabase[]) {
+          if (databases) {
+            arguments[1] = databases.map(((database) => {
+              const databaseInstance: Database = self.database(database.name!);
+              databaseInstance.metadata = database;
+              return databaseInstance;
+            }));
+          }
+          callback.apply(null, arguments);
+        });
   }
+
+  getMetadata(): Promise<[
+    instance_admin_client.spanner.admin.instance.v1.IInstance,
+    instance_admin_client.longrunning.Operations
+  ]>;
+  getMetadata(callback?: GetInstanceMetadataCallback): void;
   /**
    * @typedef {array} GetInstanceMetadataResponse
    * @property {object} 0 The {@link Instance} metadata.
@@ -574,18 +686,23 @@ class Instance extends common.ServiceObject {
    *   const apiResponse = data[1];
    * });
    */
-  getMetadata(callback) {
-      const reqOpts = {
-        name: this.formattedName_,
-      };
-      return this.request(
-          {
-            client: 'InstanceAdminClient',
-            method: 'getInstance',
-            reqOpts,
-          },
-          callback);
+  getMetadata(callback?: GetInstanceMetadataCallback): void|Promise<[
+    instance_admin_client.spanner.admin.instance.v1.IInstance,
+    instance_admin_client.longrunning.Operations
+  ]> {
+    const reqOpts:
+        instance_admin_client.spanner.admin.instance.v1.IGetInstanceRequest = {
+      name: this.formattedName_,
+    };
+    return this.request(
+        {
+          client: 'InstanceAdminClient',
+          method: 'getInstance',
+          reqOpts,
+        },
+        callback);
   }
+
   /**
    * Update the metadata for this instance. Note that this method follows PATCH
    * semantics, so previously-configured settings will persist.
@@ -629,24 +746,29 @@ class Instance extends common.ServiceObject {
    *   const apiResponse = data[1];
    * });
    */
-  setMetadata(metadata, callback?) {
-      const reqOpts = {
-        instance: extend(
-            {
-              name: this.formattedName_,
-            },
-            metadata),
-        fieldMask: {
-          paths: Object.keys(metadata).map(snakeCase),
-        },
-      };
-      return this.request(
+  setMetadata(
+      metadata: Metadata,
+      callback?: instance_admin_client.spanner.admin.instance.v1.InstanceAdmin
+          .UpdateInstanceCallback):
+      Promise<[instance_admin_client.longrunning.Operations]> {
+    const reqOpts: instance_admin_client.spanner.admin.instance.v1
+        .IUpdateInstanceRequest = {
+      instance: extend(
           {
-            client: 'InstanceAdminClient',
-            method: 'updateInstance',
-            reqOpts,
+            name: this.formattedName_,
           },
-          callback);
+          metadata),
+      fieldMask: {
+        paths: Object.keys(metadata).map(snakeCase),
+      },
+    };
+    return this.request(
+        {
+          client: 'InstanceAdminClient',
+          method: 'updateInstance',
+          reqOpts,
+        },
+        callback);
   }
   /**
    * Format the instance name to include the project ID.
@@ -661,66 +783,66 @@ class Instance extends common.ServiceObject {
    * Instance.formatName_('grape-spaceship-123', 'my-instance');
    * // 'projects/grape-spaceship-123/instances/my-instance'
    */
-  static formatName_(projectId: string, name: string) {
-      if (name.indexOf('/') > -1) {
-        return name;
-      }
-      const instanceName = name.split('/').pop();
-      return 'projects/' + projectId + '/instances/' + instanceName;
+  static formatName_(projectId: string, name: string): string {
+    if (name.indexOf('/') > -1) {
+      return name;
+    }
+    const instanceName = name.split('/').pop();
+    return 'projects/' + projectId + '/instances/' + instanceName;
   }
-  }
+}
 
-  /**
-   * Get a list of databases as a readable object stream.
-   *
-   * Wrapper around {@link v1.DatabaseAdminClient#listDatabases}.
-   *
-   * @see {@link v1.DatabaseAdminClient#listDatabases}
-   * @see [ListDatabases API Documentation](https://cloud.google.com/spanner/docs/reference/rpc/google.spanner.admin.database.v1#google.spanner.admin.database.v1.DatabaseAdmin.ListDatabases)
-   *
-   * @method Spanner#getDatabasesStream
-   * @param {GetDatabasesRequest} [query] Query object for listing databases.
-   * @returns {ReadableStream} A readable stream that emits {@link Database}
-   *     instances.
-   *
-   * @example
-   * const {Spanner} = require('@google-cloud/spanner');
-   * const spanner = new Spanner();
-   *
-   * const instance = spanner.instance('my-instance');
-   *
-   * instance.getDatabasesStream()
-   *   .on('error', console.error)
-   *   .on('data', function(database) {
-   *     // `database` is a `Database` object.
-   *   })
-   *   .on('end', function() {
-   *     // All databases retrieved.
-   *   });
-   *
-   * //-
-   * // If you anticipate many results, you can end a stream early to prevent
-   * // unnecessary processing and API requests.
-   * //-
-   * instance.getDatabasesStream()
-   *   .on('data', function(database) {
-   *     this.end();
-   *   });
-   */
-  Instance.prototype.getDatabasesStream = paginator.streamify('getDatabases');
+/**
+ * Get a list of databases as a readable object stream.
+ *
+ * Wrapper around {@link v1.DatabaseAdminClient#listDatabases}.
+ *
+ * @see {@link v1.DatabaseAdminClient#listDatabases}
+ * @see [ListDatabases API Documentation](https://cloud.google.com/spanner/docs/reference/rpc/google.spanner.admin.database.v1#google.spanner.admin.database.v1.DatabaseAdmin.ListDatabases)
+ *
+ * @method Spanner#getDatabasesStream
+ * @param {GetDatabasesRequest} [query] Query object for listing databases.
+ * @returns {ReadableStream} A readable stream that emits {@link Database}
+ *     instances.
+ *
+ * @example
+ * const {Spanner} = require('@google-cloud/spanner');
+ * const spanner = new Spanner();
+ *
+ * const instance = spanner.instance('my-instance');
+ *
+ * instance.getDatabasesStream()
+ *   .on('error', console.error)
+ *   .on('data', function(database) {
+ *     // `database` is a `Database` object.
+ *   })
+ *   .on('end', function() {
+ *     // All databases retrieved.
+ *   });
+ *
+ * //-
+ * // If you anticipate many results, you can end a stream early to prevent
+ * // unnecessary processing and API requests.
+ * //-
+ * instance.getDatabasesStream()
+ *   .on('data', function(database) {
+ *     this.end();
+ *   });
+ */
+Instance.prototype.getDatabasesStream = paginator.streamify('getDatabases');
 
-  /*! Developer Documentation
-   *
-   * All async methods (except for streams) will return a Promise in the event
-   * that a callback is omitted.
-   */
-  promisifyAll(Instance, {
-    exclude: ['database'],
-  });
+/*! Developer Documentation
+ *
+ * All async methods (except for streams) will return a Promise in the event
+ * that a callback is omitted.
+ */
+promisifyAll(Instance, {
+  exclude: ['database'],
+});
 
-  /**
-   * Reference to the {@link Instance} class.
-   * @name module:@google-cloud/spanner.Instance
-   * @see Instance
-   */
-  export {Instance};
+/**
+ * Reference to the {@link Instance} class.
+ * @name module:@google-cloud/spanner.Instance
+ * @see Instance
+ */
+export {Instance};

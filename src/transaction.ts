@@ -90,7 +90,8 @@ export type RunPromise = Promise<[Rows, s.ResultSetStats]>;
 export type RunUpdatePromise = Promise<[number]>;
 
 export interface BatchUpdateCallback {
-  (err: null|BatchUpdateError, rowCounts: number[], response?: s.ExecuteBatchDmlResponse): void;
+  (err: null|BatchUpdateError, rowCounts: number[],
+   response?: s.ExecuteBatchDmlResponse): void;
 }
 
 export interface ReadCallback {
@@ -175,7 +176,7 @@ export class Snapshot extends EventEmitter {
    * @type {?(string|Buffer)}
    */
   /**
-   * Whether or not the transaction has ended. If true, make no further 
+   * Whether or not the transaction has ended. If true, make no further
    * requests, and discard the transaction.
    *
    * @name Snapshot#ended
@@ -254,7 +255,8 @@ export class Snapshot extends EventEmitter {
    *   }
    * });
    *
-   * @example <caption>If the callback is omitted, the function returns a Promise
+   * @example <caption>If the callback is omitted, the function returns a
+   * Promise
    * </caption>
    * transaction.begin()
    *   .then(function(data) {
@@ -663,9 +665,9 @@ export class Snapshot extends EventEmitter {
    * **Performance Considerations:**
    *
    * This method wraps the streaming method,
-   * {@link Snapshot#run} for your convenience. All rows are stored in memory 
-   * before releasing to your callback. If you intend to receive a lot of 
-   * results from your query, consider using the streaming method, 
+   * {@link Snapshot#run} for your convenience. All rows are stored in memory
+   * before releasing to your callback. If you intend to receive a lot of
+   * results from your query, consider using the streaming method,
    * so you can free each result from memory after consuming it.
    *
    * Wrapper around {@link v1.SpannerClient#executeStreamingSql}.
@@ -923,7 +925,7 @@ export class Snapshot extends EventEmitter {
           codec.convertMsToProtoTimestamp(options.exactStaleness as number);
     }
 
-    // If we didn't detect a convenience format, we'll just assume that 
+    // If we didn't detect a convenience format, we'll just assume that
     // they passed in a protobuf timestamp.
     if (is.empty(readOnly)) {
       Object.assign(readOnly, options);
@@ -1141,7 +1143,8 @@ export class Transaction extends Dml {
   }
 
   batchUpdate(queries: Array<string|Statement>): BatchUpdatePromise;
-  batchUpdate(queries: Array<string|Statement>, callback: BatchUpdateCallback): void;
+  batchUpdate(queries: Array<string|Statement>, callback: BatchUpdateCallback):
+      void;
   /**
    * @typedef {error} BatchUpdateError
    * @property {number} code gRPC status code.
@@ -1192,17 +1195,19 @@ export class Transaction extends Dml {
    *   }
    * });
    *
-   * @example <caption>If the callback is omitted, we'll return a Promise.</caption>
-   * const [rowCounts, apiResponse] = await transaction.batchUpdate(queries);
+   * @example <caption>If the callback is omitted, we'll return a
+   * Promise.</caption> const [rowCounts, apiResponse] = await
+   * transaction.batchUpdate(queries);
    */
-  batchUpdate(queries: Array<string|Statement>, callback?: BatchUpdateCallback): BatchUpdatePromise|void {
+  batchUpdate(queries: Array<string|Statement>, callback?: BatchUpdateCallback):
+      BatchUpdatePromise|void {
     if (!Array.isArray(queries) || !queries.length) {
       const rowCounts: number[] = [];
       const error = new Error('batchUpdate requires at least 1 DML statement.');
       const batchError: BatchUpdateError = Object.assign(error, {
-        code: 3, // invalid argument
+        code: 3,  // invalid argument
         rowCounts
-      })
+      });
       callback!(batchError, rowCounts);
       return;
     }
@@ -1224,11 +1229,7 @@ export class Transaction extends Dml {
     };
 
     this.request(
-        {
-          client: 'SpannerClient',
-          method: 'executeBatchDml',
-          reqOpts
-        },
+        {client: 'SpannerClient', method: 'executeBatchDml', reqOpts},
         (err: null|ServiceError, resp: s.ExecuteBatchDmlResponse) => {
           let batchUpdateError: BatchUpdateError;
 

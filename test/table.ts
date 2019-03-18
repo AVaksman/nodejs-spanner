@@ -120,7 +120,8 @@ describe('Table', () => {
 
   describe('createReadStream', () => {
     let fakeReadStream: Transform;
-    let getSnapshotStub: sinon.SinonStub<[TimestampBounds, GetSnapshotCallback], void>;
+    let getSnapshotStub:
+        sinon.SinonStub<[TimestampBounds, GetSnapshotCallback], void>;
 
     const REQUEST = {keys: ['key']};
 

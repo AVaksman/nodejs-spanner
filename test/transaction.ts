@@ -1051,13 +1051,14 @@ describe('Transaction', () => {
         const fakeError = new Error('err');
         const fakeResponse = {};
 
-        transaction.batchUpdate(OBJ_STATEMENTS, (err, rowCounts, apiResponse) => {
-          assert.strictEqual(err, fakeError);
-          assert.deepStrictEqual(err.rowCounts, []);
-          assert.deepStrictEqual(rowCounts, []);
-          assert.strictEqual(apiResponse, fakeResponse);
-          done();
-        });
+        transaction.batchUpdate(
+            OBJ_STATEMENTS, (err, rowCounts, apiResponse) => {
+              assert.strictEqual(err, fakeError);
+              assert.deepStrictEqual(err.rowCounts, []);
+              assert.deepStrictEqual(rowCounts, []);
+              assert.strictEqual(apiResponse, fakeResponse);
+              done();
+            });
 
         const requestCallback = stub.lastCall.args[1];
         setImmediate(requestCallback, fakeError, fakeResponse);
@@ -1073,41 +1074,44 @@ describe('Transaction', () => {
           ]
         };
 
-        transaction.batchUpdate(OBJ_STATEMENTS, (err, rowCounts, apiResponse) => {
-          assert.ifError(err);
-          assert.deepStrictEqual(rowCounts, expectedRowCounts);
-          assert.strictEqual(apiResponse, fakeResponse);
-          done();
-        });
+        transaction.batchUpdate(
+            OBJ_STATEMENTS, (err, rowCounts, apiResponse) => {
+              assert.ifError(err);
+              assert.deepStrictEqual(rowCounts, expectedRowCounts);
+              assert.strictEqual(apiResponse, fakeResponse);
+              done();
+            });
 
         const requestCallback = stub.lastCall.args[1];
         setImmediate(requestCallback, null, fakeResponse);
       });
 
-      it('should return both error and row counts for partial failures', done => {
-        const stub = sandbox.stub(transaction, 'request');
-        const expectedRowCounts = [6, 8];
-        const fakeResponse = {
-          resultSets: [
-            {stats: {rowCount: 'a', a: '6'}},
-            {stats: {rowCount: 'b', b: '8'}},
-          ],
-          status: {code: 3, details: 'Err'}
-        };
+      it('should return both error and row counts for partial failures',
+         done => {
+           const stub = sandbox.stub(transaction, 'request');
+           const expectedRowCounts = [6, 8];
+           const fakeResponse = {
+             resultSets: [
+               {stats: {rowCount: 'a', a: '6'}},
+               {stats: {rowCount: 'b', b: '8'}},
+             ],
+             status: {code: 3, details: 'Err'}
+           };
 
-        transaction.batchUpdate(OBJ_STATEMENTS, (err, rowCounts, apiResponse) => {
-          assert(err instanceof Error);
-          assert.strictEqual(err.code, fakeResponse.status.code);
-          assert.strictEqual(err.message, fakeResponse.status.details);
-          assert.deepStrictEqual(err.rowCounts, expectedRowCounts);
-          assert.deepStrictEqual(rowCounts, expectedRowCounts);
-          assert.deepStrictEqual(apiResponse, fakeResponse);
-          done();
-        });
+           transaction.batchUpdate(
+               OBJ_STATEMENTS, (err, rowCounts, apiResponse) => {
+                 assert(err instanceof Error);
+                 assert.strictEqual(err.code, fakeResponse.status.code);
+                 assert.strictEqual(err.message, fakeResponse.status.details);
+                 assert.deepStrictEqual(err.rowCounts, expectedRowCounts);
+                 assert.deepStrictEqual(rowCounts, expectedRowCounts);
+                 assert.deepStrictEqual(apiResponse, fakeResponse);
+                 done();
+               });
 
-        const requestCallback = stub.lastCall.args[1];
-        setImmediate(requestCallback, null, fakeResponse);
-      });
+           const requestCallback = stub.lastCall.args[1];
+           setImmediate(requestCallback, null, fakeResponse);
+         });
     });
 
     describe('begin', () => {
