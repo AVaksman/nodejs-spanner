@@ -3782,6 +3782,18 @@
                     }
                   }
                 },
+                "RequestOptions": {
+                  "fields": {
+                    "requestTag": {
+                      "type": "string",
+                      "id": 2
+                    },
+                    "transactionTag": {
+                      "type": "string",
+                      "id": 3
+                    }
+                  }
+                },
                 "ExecuteSqlRequest": {
                   "fields": {
                     "session": {
@@ -3831,6 +3843,10 @@
                     "queryOptions": {
                       "type": "QueryOptions",
                       "id": 10
+                    },
+                    "requestOptions": {
+                      "type": "RequestOptions",
+                      "id": 11
                     }
                   },
                   "nested": {
@@ -3882,6 +3898,10 @@
                       "options": {
                         "(google.api.field_behavior)": "REQUIRED"
                       }
+                    },
+                    "requestOptions": {
+                      "type": "RequestOptions",
+                      "id": 5
                     }
                   },
                   "nested": {
@@ -4080,6 +4100,10 @@
                     "partitionToken": {
                       "type": "bytes",
                       "id": 10
+                    },
+                    "requestOptions": {
+                      "type": "RequestOptions",
+                      "id": 11
                     }
                   }
                 },
@@ -4099,6 +4123,10 @@
                       "options": {
                         "(google.api.field_behavior)": "REQUIRED"
                       }
+                    },
+                    "requestOptions": {
+                      "type": "RequestOptions",
+                      "id": 3
                     }
                   }
                 },
@@ -4136,6 +4164,10 @@
                     "returnCommitStats": {
                       "type": "bool",
                       "id": 5
+                    },
+                    "requestOptions": {
+                      "type": "RequestOptions",
+                      "id": 6
                     }
                   }
                 },
@@ -4207,8 +4239,7 @@
                 "REQUIRED": 2,
                 "OUTPUT_ONLY": 3,
                 "INPUT_ONLY": 4,
-                "IMMUTABLE": 5,
-                "UNORDERED_LIST": 6
+                "IMMUTABLE": 5
               }
             },
             "resourceReference": {
