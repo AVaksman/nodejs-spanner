@@ -70,12 +70,18 @@ export interface Statement {
   types?: Type | {[param: string]: Value};
 }
 
+export interface TxnRequestOptions {
+  requestTag?: string;
+  transactionTag?: string;
+}
+
 export interface ExecuteSqlRequest extends Statement, RequestOptions {
   resumeToken?: ResumeToken;
   queryMode?: spannerClient.spanner.v1.ExecuteSqlRequest.QueryMode;
   partitionToken?: Uint8Array | string;
   seqno?: number;
   queryOptions?: IQueryOptions;
+  txnRequestOptions?: Pick<TxnRequestOptions, 'requestTag'>;
 }
 
 export interface KeyRange {
@@ -95,6 +101,7 @@ export interface ReadRequest extends RequestOptions {
   limit?: number | Long | null;
   resumeToken?: Uint8Array | null;
   partitionToken?: Uint8Array | null;
+  txnRequestOptions?: Pick<TxnRequestOptions, 'requestTag'>;
 }
 
 export interface BatchUpdateError extends grpc.ServiceError {
@@ -120,6 +127,10 @@ export type RunResponse = [
 ];
 export type RunUpdateResponse = [number];
 
+export interface BatchUpdateOptions {
+  txnRequestOptions?: Pick<TxnRequestOptions, 'requestTag'>;
+  gaxOptions?: CallOptions;
+}
 export interface BatchUpdateCallback {
   (
     err: null | BatchUpdateError,
@@ -144,6 +155,10 @@ export interface RunUpdateCallback {
 }
 
 export type CommitCallback = NormalCallback<spannerClient.spanner.v1.ICommitResponse>;
+export interface BeginTransactionOptions {
+  gaxOptions?: CallOptions;
+  transactionRequestOptions?: Pick<TxnRequestOptions, 'transactionTag'>;
+}
 
 /**
  * @typedef {object} TimestampBounds
@@ -210,6 +225,7 @@ export class Snapshot extends EventEmitter {
   session: Session;
   queryOptions?: IQueryOptions;
   resourceHeader_: {[k: string]: string};
+  transactionRequestOptions?: Pick<TxnRequestOptions, 'transactionTag'>;
 
   /**
    * The transaction ID.
@@ -274,9 +290,14 @@ export class Snapshot extends EventEmitter {
     };
   }
 
-  begin(gaxOptions?: CallOptions): Promise<BeginResponse>;
+  begin(
+    options?: BeginTransactionOptions | CallOptions
+  ): Promise<BeginResponse>;
   begin(callback: BeginTransactionCallback): void;
-  begin(gaxOptions: CallOptions, callback: BeginTransactionCallback): void;
+  begin(
+    options: BeginTransactionOptions | CallOptions,
+    callback: BeginTransactionCallback
+  ): void;
   /**
    * @typedef {object} TransactionResponse
    * @property {string|Buffer} id The transaction ID.
@@ -318,13 +339,20 @@ export class Snapshot extends EventEmitter {
    *   });
    */
   begin(
-    gaxOptionsOrCallback?: CallOptions | BeginTransactionCallback,
+    optionsOrCallback?:
+      | BeginTransactionOptions
+      | CallOptions
+      | BeginTransactionCallback,
     cb?: BeginTransactionCallback
   ): void | Promise<BeginResponse> {
-    const gaxOpts =
-      typeof gaxOptionsOrCallback === 'object' ? gaxOptionsOrCallback : {};
+    const beginOptions =
+      typeof optionsOrCallback === 'object' ? optionsOrCallback : {};
     const callback =
-      typeof gaxOptionsOrCallback === 'function' ? gaxOptionsOrCallback : cb!;
+      typeof optionsOrCallback === 'function' ? optionsOrCallback : cb!;
+    const gaxOpts =
+      'gaxOptions' in beginOptions
+        ? (beginOptions as BeginTransactionOptions).gaxOptions
+        : beginOptions;
 
     const session = this.session.formattedName_!;
     const options = this._options;
@@ -332,6 +360,10 @@ export class Snapshot extends EventEmitter {
       session,
       options,
     };
+
+    if ('transactionRequestOptions' in beginOptions) {
+      reqOpts.requestOptions = beginOptions.transactionRequestOptions;
+    }
 
     this.request(
       {
@@ -509,7 +541,13 @@ export class Snapshot extends EventEmitter {
     table: string,
     request = {} as ReadRequest
   ): PartialResultStream {
-    const {gaxOptions, json, jsonOptions, maxResumeRetries} = request;
+    const {
+      gaxOptions,
+      json,
+      jsonOptions,
+      maxResumeRetries,
+      txnRequestOptions,
+    } = request;
     const keySet = Snapshot.encodeKeySet(request);
     const transaction: spannerClient.spanner.v1.ITransactionSelector = {};
 
@@ -527,13 +565,22 @@ export class Snapshot extends EventEmitter {
     delete request.maxResumeRetries;
     delete request.keys;
     delete request.ranges;
+    delete request.txnRequestOptions;
 
-    const reqOpts: ReadRequest = Object.assign(request, {
-      session: this.session.formattedName_!,
-      transaction,
-      table,
-      keySet,
-    });
+    const reqOpts: spannerClient.spanner.v1.IReadRequest = Object.assign(
+      request,
+      {
+        session: this.session.formattedName_!,
+        requestOptions: this.configureTagOptions(
+          typeof transaction.singleUse !== 'undefined',
+          this.transactionRequestOptions?.transactionTag,
+          txnRequestOptions?.requestTag
+        ),
+        transaction,
+        table,
+        keySet,
+      }
+    );
 
     const makeRequest = (resumeToken?: ResumeToken): Readable => {
       return this.requestStream({
@@ -916,7 +963,13 @@ export class Snapshot extends EventEmitter {
       query.queryOptions
     );
 
-    const {gaxOptions, json, jsonOptions, maxResumeRetries} = query;
+    const {
+      gaxOptions,
+      json,
+      jsonOptions,
+      maxResumeRetries,
+      txnRequestOptions,
+    } = query;
     let reqOpts;
 
     const sanitizeRequest = () => {
@@ -932,10 +985,17 @@ export class Snapshot extends EventEmitter {
       delete query.json;
       delete query.jsonOptions;
       delete query.maxResumeRetries;
+      delete query.txnRequestOptions;
       delete query.types;
+
       reqOpts = Object.assign(query, {
         session: this.session.formattedName_!,
         seqno: this._seqno++,
+        requestOptions: this.configureTagOptions(
+          typeof transaction.singleUse !== 'undefined',
+          this.transactionRequestOptions?.transactionTag,
+          txnRequestOptions?.requestTag
+        ),
         transaction,
         params,
         paramTypes,
@@ -967,6 +1027,21 @@ export class Snapshot extends EventEmitter {
       jsonOptions,
       maxResumeRetries,
     });
+  }
+
+  /**
+   *
+   * @private
+   */
+  configureTagOptions(
+    singleUse?: boolean,
+    transactionTag?: string,
+    requestTag?: string
+  ): spannerClient.spanner.v1.IRequestOptions | null {
+    if (!transactionTag && !requestTag) {
+      return null;
+    }
+    return singleUse ? {requestTag} : {transactionTag, requestTag};
   }
 
   /**
@@ -1259,17 +1334,19 @@ export class Transaction extends Dml {
   constructor(
     session: Session,
     options = {} as spannerClient.spanner.v1.TransactionOptions.ReadWrite,
-    queryOptions?: IQueryOptions
+    queryOptions?: IQueryOptions,
+    transactionRequestOptions?: Pick<TxnRequestOptions, 'transactionTag'>
   ) {
     super(session, undefined, queryOptions);
 
     this._queuedMutations = [];
     this._options = {readWrite: options};
+    this.transactionRequestOptions = transactionRequestOptions;
   }
 
   batchUpdate(
     queries: Array<string | Statement>,
-    gaxOptions?: CallOptions
+    options?: BatchUpdateOptions | CallOptions
   ): Promise<BatchUpdateResponse>;
   batchUpdate(
     queries: Array<string | Statement>,
@@ -1277,7 +1354,7 @@ export class Transaction extends Dml {
   ): void;
   batchUpdate(
     queries: Array<string | Statement>,
-    gaxOptions: CallOptions,
+    options: BatchUpdateOptions | CallOptions,
     callback: BatchUpdateCallback
   ): void;
   /**
@@ -1337,13 +1414,17 @@ export class Transaction extends Dml {
    */
   batchUpdate(
     queries: Array<string | Statement>,
-    gaxOptionsOrCallback?: CallOptions | BatchUpdateCallback,
+    optionsOrCallback?: BatchUpdateOptions | CallOptions | BatchUpdateCallback,
     cb?: BatchUpdateCallback
   ): Promise<BatchUpdateResponse> | void {
-    const gaxOpts =
-      typeof gaxOptionsOrCallback === 'object' ? gaxOptionsOrCallback : {};
+    const options =
+      typeof optionsOrCallback === 'object' ? optionsOrCallback : {};
     const callback =
-      typeof gaxOptionsOrCallback === 'function' ? gaxOptionsOrCallback : cb!;
+      typeof optionsOrCallback === 'function' ? optionsOrCallback : cb!;
+    const gaxOpts =
+      'gaxOptions' in options
+        ? (options as BatchUpdateOptions).gaxOptions
+        : options;
 
     if (!Array.isArray(queries) || !queries.length) {
       const rowCounts: number[] = [];
@@ -1369,6 +1450,11 @@ export class Transaction extends Dml {
 
     const reqOpts: spannerClient.spanner.v1.ExecuteBatchDmlRequest = {
       session: this.session.formattedName_!,
+      requestOptions: this.configureTagOptions(
+        false,
+        this.transactionRequestOptions?.transactionTag,
+        (options as BatchUpdateOptions).txnRequestOptions?.requestTag
+      ),
       transaction: {id: this.id!},
       seqno: this._seqno++,
       statements,
@@ -1525,6 +1611,11 @@ export class Transaction extends Dml {
     ) {
       reqOpts.returnCommitStats = (options as CommitOptions).returnCommitStats;
     }
+
+    reqOpts.requestOptions = this.configureTagOptions(
+      typeof reqOpts.singleUseTransaction !== 'undefined',
+      this.transactionRequestOptions?.transactionTag
+    );
 
     this.request(
       {

@@ -2407,7 +2407,7 @@ describe('Database', () => {
       pool = database.pool_;
 
       (sandbox.stub(pool, 'getWriteSession') as sinon.SinonStub).callsFake(
-        callback => {
+        (opts, callback) => {
           callback(null, SESSION, TRANSACTION);
         }
       );
@@ -2416,7 +2416,7 @@ describe('Database', () => {
     it('should return any errors getting a session', done => {
       const fakeErr = new Error('err');
 
-      (pool.getWriteSession as sinon.SinonStub).callsFake(callback =>
+      (pool.getWriteSession as sinon.SinonStub).callsFake((opts, callback) =>
         callback(fakeErr)
       );
 

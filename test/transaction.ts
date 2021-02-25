@@ -25,6 +25,11 @@ import * as sinon from 'sinon';
 import {codec} from '../src/codec';
 import {google} from '../protos/protos';
 import {CLOUD_RESOURCE_HEADER} from '../src/common';
+import {
+  BatchUpdateOptions,
+  BeginTransactionOptions,
+  ReadRequest,
+} from '../src/transaction';
 
 describe('Transaction', () => {
   const sandbox = sinon.createSandbox();
@@ -141,6 +146,57 @@ describe('Transaction', () => {
         assert.deepStrictEqual(headers, snapshot.resourceHeader_);
       });
 
+      it('should accept options as CallOptions', done => {
+        const gaxOptions = {
+          timeout: 1000,
+        };
+
+        snapshot.request = config => {
+          assert.strictEqual(config.gaxOpts, gaxOptions);
+          done();
+        };
+
+        snapshot.begin(gaxOptions);
+      });
+
+      it('should accept tag options', done => {
+        const options: BeginTransactionOptions = {
+          transactionRequestOptions: {transactionTag: 'foo'},
+        };
+
+        snapshot.request = config => {
+          assert.strictEqual(
+            config.reqOpts.requestOptions,
+            options.transactionRequestOptions
+          );
+          assert.strictEqual(config.gaxOpts, options);
+          done();
+        };
+
+        snapshot.begin(options);
+      });
+
+      it('should accept tag options and gaxOptions', done => {
+        const gaxOptions = {
+          timeout: 1000,
+        };
+        const options: BeginTransactionOptions = {
+          transactionRequestOptions: {transactionTag: 'foo'},
+          gaxOptions,
+        };
+
+        snapshot.request = config => {
+          assert.strictEqual(
+            config.reqOpts.requestOptions,
+            options.transactionRequestOptions
+          );
+          assert.strictEqual(config.gaxOpts, gaxOptions);
+          done();
+        };
+
+        snapshot.begin(options);
+      });
+
       it('should send the formatted options', () => {
         const fakeOptions = {a: 'b'};
         const fakeEncodedOptions = {c: 'd'};
@@ -255,6 +311,17 @@ describe('Transaction', () => {
         assert.deepStrictEqual(reqOpts.transaction, expectedTransaction);
       });
 
+      it('shoould set request tag if `singleUse', () => {
+        const requestTag = 'foo';
+        const request: ReadRequest = {txnRequestOptions: {requestTag}};
+
+        snapshot.createReadStream(TABLE, request);
+
+        const {reqOpts} = REQUEST_STREAM.lastCall.args[0];
+
+        assert.deepStrictEqual(reqOpts.requestOptions, {requestTag});
+      });
+
       it('should send the correct `reqOpts`', () => {
         const id = 'transaction-id-123';
         const fakeKeySet = {all: true};
@@ -267,6 +334,7 @@ describe('Transaction', () => {
 
         const expectedRequest = {
           session: SESSION_NAME,
+          requestOptions: null,
           transaction: {id},
           table: TABLE,
           keySet: fakeKeySet,
@@ -523,6 +591,19 @@ describe('Transaction', () => {
         assert.deepStrictEqual(reqOpts.transaction, expectedTransaction);
       });
 
+      it('shoould set request tag if `singleUse', () => {
+        const requestTag = 'foo';
+        const query = Object.assign({}, QUERY, {
+          txnRequestOptions: {requestTag},
+        });
+
+        snapshot.runStream(query);
+
+        const {reqOpts} = REQUEST_STREAM.lastCall.args[0];
+
+        assert.deepStrictEqual(reqOpts.requestOptions, {requestTag});
+      });
+
       it('should send the correct `reqOpts`', () => {
         const id = 'transaction-id-123';
         const fakeParams = {b: 'a'};
@@ -537,6 +618,7 @@ describe('Transaction', () => {
 
         const expectedRequest = {
           session: SESSION_NAME,
+          requestOptions: null,
           transaction: {id},
           sql: QUERY.sql,
           params: fakeParams,
@@ -1085,6 +1167,53 @@ describe('Transaction', () => {
         transaction.batchUpdate(STRING_STATEMENTS, gaxOptions, assert.ifError);
       });
 
+      it('should set transactionTag', done => {
+        const transactionTag = 'bar';
+        transaction.transactionRequestOptions = {transactionTag};
+        transaction.request = config => {
+          assert.deepStrictEqual(config.reqOpts.requestOptions, {
+            transactionTag,
+            requestTag: undefined,
+          });
+          done();
+        };
+        transaction.batchUpdate(STRING_STATEMENTS, assert.ifError);
+      });
+
+      it('should set requestTag', done => {
+        const requestTag = 'foo';
+        const options: BatchUpdateOptions = {txnRequestOptions: {requestTag}};
+        transaction.request = config => {
+          assert.deepStrictEqual(config.reqOpts.requestOptions, {
+            transactionTag: undefined,
+            requestTag,
+          });
+          done();
+        };
+        transaction.batchUpdate(STRING_STATEMENTS, options, assert.ifError);
+      });
+
+      it('should set both tags and accept gaxOptions', done => {
+        const transactionTag = 'bar';
+        transaction.transactionRequestOptions = {transactionTag};
+
+        const requestTag = 'foo';
+        const gaxOptions = {timeout: 1000};
+        const options: BatchUpdateOptions = {
+          txnRequestOptions: {requestTag},
+          gaxOptions,
+        };
+        transaction.request = config => {
+          assert.deepStrictEqual(config.reqOpts.requestOptions, {
+            transactionTag,
+            requestTag,
+          });
+          assert.strictEqual(config.gaxOpts, gaxOptions);
+          done();
+        };
+        transaction.batchUpdate(STRING_STATEMENTS, options, assert.ifError);
+      });
+
       it('should return an error if statements are missing', done => {
         transaction.batchUpdate(null, err => {
           assert.strictEqual(
@@ -1262,7 +1391,7 @@ describe('Transaction', () => {
           assert.strictEqual(config.gaxOpts, gaxOptions);
           done();
         };
-        transaction.begin(gaxOptions, assert.ifError);
+        transaction.begin({gaxOptions}, assert.ifError);
       });
     });
 
@@ -1333,6 +1462,22 @@ describe('Transaction', () => {
         const {reqOpts} = stub.lastCall.args[0];
 
         assert.strictEqual(reqOpts.transactionId, id);
+      });
+
+      it('should set transactionTag when not single use transaction', done => {
+        const id = 'transaction-id-123';
+        const transactionTag = 'bar';
+        transaction.id = id;
+        transaction.transactionRequestOptions = {transactionTag};
+
+        transaction.request = config => {
+          assert.strictEqual(
+            config.reqOpts.requestOptions.transactionTag,
+            transactionTag
+          );
+          done();
+        };
+        transaction.commit(assert.ifError);
       });
 
       it('should set `singleUseTransaction` when `id` is not set', () => {

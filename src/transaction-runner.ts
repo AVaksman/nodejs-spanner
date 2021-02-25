@@ -20,7 +20,7 @@ import {Root} from 'protobufjs';
 import * as through from 'through2';
 
 import {Session} from './session';
-import {Transaction} from './transaction';
+import {Transaction, TxnRequestOptions} from './transaction';
 import {NormalCallback} from './common';
 import {isSessionNotFoundError} from './session-pool';
 import {Database} from './database';
@@ -41,6 +41,7 @@ const RetryInfo = Root.fromJSON(jsonProtos).lookup('google.rpc.RetryInfo');
  */
 export interface RunTransactionOptions {
   timeout?: number;
+  transactionRequestOptions?: Pick<TxnRequestOptions, 'transactionTag'>;
 }
 
 /**

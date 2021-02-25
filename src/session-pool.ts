@@ -20,7 +20,7 @@ import PQueue from 'p-queue';
 
 import {Database} from './database';
 import {Session, types} from './session';
-import {Transaction} from './transaction';
+import {Transaction, TxnRequestOptions} from './transaction';
 import {NormalCallback} from './common';
 import {grpc} from 'google-gax';
 import trace = require('stack-trace');
@@ -95,7 +95,12 @@ export interface SessionPoolInterface extends EventEmitter {
    * @name SessionPoolInterface#getWriteSession
    * @param {GetWriteSessionCallback} callback The callback function.
    */
+  getWriteSession(
+    transactionRequestOptions: Pick<TxnRequestOptions, 'transactionTag'>,
+    callback: GetWriteSessionCallback
+  ): void;
   getWriteSession(callback: GetWriteSessionCallback): void;
+
   /**
    * To be called when releasing a session back into the pool.
    *
@@ -529,14 +534,33 @@ export class SessionPool extends EventEmitter implements SessionPoolInterface {
     );
   }
 
+  getWriteSession(
+    transactionRequestOptions: Pick<TxnRequestOptions, 'transactionTag'>,
+    callback: GetWriteSessionCallback
+  ): void;
+  getWriteSession(callback: GetWriteSessionCallback): void;
   /**
    * Retrieve a read/write session.
    *
    * @param {GetWriteSessionCallback} callback The callback function.
    */
-  getWriteSession(callback: GetWriteSessionCallback): void {
-    this._acquire(types.ReadWrite).then(
-      session => callback(null, session, session.txn!),
+  getWriteSession(
+    transactionRequestOptionsOrCallback?:
+      | Pick<TxnRequestOptions, 'transactionTag'>
+      | GetWriteSessionCallback,
+    callback?: GetWriteSessionCallback
+  ): void {
+    const transactionRequestOptions =
+      typeof transactionRequestOptionsOrCallback === 'object'
+        ? transactionRequestOptionsOrCallback
+        : undefined;
+    callback =
+      typeof transactionRequestOptionsOrCallback === 'function'
+        ? transactionRequestOptionsOrCallback
+        : callback;
+
+    this._acquire(types.ReadWrite, transactionRequestOptions).then(
+      session => callback!(null, session, session.txn!),
       callback
     );
   }
@@ -634,7 +658,10 @@ export class SessionPool extends EventEmitter implements SessionPoolInterface {
    * @param {string} type The desired type to borrow.
    * @returns {Promise<Session>}
    */
-  async _acquire(type: types): Promise<Session> {
+  async _acquire(
+    type: types,
+    transactionRequestOptions?: Pick<TxnRequestOptions, 'transactionTag'>
+  ): Promise<Session> {
     if (!this.isOpen) {
       throw new Error(errors.Closed);
     }
@@ -668,7 +695,7 @@ export class SessionPool extends EventEmitter implements SessionPoolInterface {
     if (type === types.ReadWrite && session.type === types.ReadOnly) {
       this._numInProcessPrepare++;
       try {
-        await this._prepareTransaction(session);
+        await this._prepareTransaction(session, transactionRequestOptions);
       } catch (e) {
         if (isSessionNotFoundError(e)) {
           this._inventory.borrowed.delete(session);
@@ -1085,11 +1112,15 @@ export class SessionPool extends EventEmitter implements SessionPoolInterface {
    * @param {object} options The transaction options.
    * @returns {Promise}
    */
-  async _prepareTransaction(session: Session): Promise<void> {
+  async _prepareTransaction(
+    session: Session,
+    transactionRequestOptions?: Pick<TxnRequestOptions, 'transactionTag'>
+  ): Promise<void> {
     const transaction = session.transaction(
-      (session.parent as Database).queryOptions_
+      (session.parent as Database).queryOptions_,
+      transactionRequestOptions
     );
-    await transaction.begin();
+    await transaction.begin({transactionRequestOptions});
     session.txn = transaction;
   }
 

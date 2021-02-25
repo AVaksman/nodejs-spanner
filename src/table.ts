@@ -27,6 +27,7 @@ import {
   ReadResponse,
   ReadCallback,
   CommitCallback,
+  TxnRequestOptions,
 } from './transaction';
 import {google as databaseAdmin} from '../protos/protos';
 import {Schema, LongRunningCallback} from './common';
@@ -45,23 +46,28 @@ export type DropTableCallback = UpdateSchemaCallback;
 
 export type DeleteRowsCallback = CommitCallback;
 export type DeleteRowsResponse = CommitResponse;
-export type DeleteRowsOptions = CommitOptions;
+export interface DeleteRowsOptions extends CommitOptions {
+  transactionRequestOptions?: Pick<TxnRequestOptions, 'transactionTag'>;
+}
 
 export type InsertRowsCallback = CommitCallback;
 export type InsertRowsResponse = CommitResponse;
-export type InsertRowsOptions = CommitOptions;
+export type InsertRowsOptions = DeleteRowsOptions;
 
 export type ReplaceRowsCallback = CommitCallback;
 export type ReplaceRowsResponse = CommitResponse;
-export type ReplaceRowsOptions = CommitOptions;
+export type ReplaceRowsOptions = DeleteRowsOptions;
 
 export type UpdateRowsCallback = CommitCallback;
 export type UpdateRowsResponse = CommitResponse;
-export type UpdateRowsOptions = CommitOptions;
+export type UpdateRowsOptions = DeleteRowsOptions;
 
 export type UpsertRowsCallback = CommitCallback;
 export type UpsertRowsResponse = CommitResponse;
-export type UpsertRowsOptions = CommitOptions;
+export type UpsertRowsOptions = DeleteRowsOptions;
+
+type MutateRowsOptions = DeleteRowsOptions;
+
 /**
  * Create a Table object to interact with a table in a Cloud Spanner
  * database.
@@ -908,18 +914,21 @@ class Table {
   private _mutate(
     method: 'deleteRows' | 'insert' | 'replace' | 'update' | 'upsert',
     rows: object | object[],
-    options: CommitOptions = {},
+    options: MutateRowsOptions = {},
     callback: CommitCallback
   ): void {
-    this.database.runTransaction((err, transaction) => {
-      if (err) {
-        callback(err);
-        return;
-      }
+    this.database.runTransaction(
+      {transactionRequestOptions: options.transactionRequestOptions},
+      (err, transaction) => {
+        if (err) {
+          callback(err);
+          return;
+        }
 
-      transaction![method](this.name, rows as Key[]);
-      transaction!.commit(options, callback);
-    });
+        transaction![method](this.name, rows as Key[]);
+        transaction!.commit(options, callback);
+      }
+    );
   }
 }
 

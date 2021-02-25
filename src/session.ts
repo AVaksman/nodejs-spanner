@@ -28,6 +28,7 @@ import {
   Transaction,
   PartitionedDml,
   TimestampBounds,
+  TxnRequestOptions,
 } from './transaction';
 import {google} from '../protos/protos';
 import {
@@ -446,9 +447,15 @@ export class Session extends common.GrpcServiceObject {
    * const transaction = session.transaction();
    */
   transaction(
-    queryOptions?: google.spanner.v1.ExecuteSqlRequest.IQueryOptions
+    queryOptions?: google.spanner.v1.ExecuteSqlRequest.IQueryOptions,
+    transactionRequestOptions?: Pick<TxnRequestOptions, 'transactionTag'>
   ) {
-    return new Transaction(this, undefined, queryOptions);
+    return new Transaction(
+      this,
+      undefined,
+      queryOptions,
+      transactionRequestOptions
+    );
   }
   /**
    * Format the session name to include the parent database's name.

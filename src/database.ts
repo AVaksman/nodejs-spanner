@@ -2446,34 +2446,37 @@ class Database extends common.GrpcServiceObject {
         ? (optionsOrRunFn as RunTransactionOptions)
         : {};
 
-    this.pool_.getWriteSession((err, session?, transaction?) => {
-      if (err && isSessionNotFoundError(err as grpc.ServiceError)) {
-        this.runTransaction(options, runFn!);
-        return;
-      }
-      if (err) {
-        runFn!(err as grpc.ServiceError);
-        return;
-      }
-
-      const release = this.pool_.release.bind(this.pool_, session!);
-      const runner = new TransactionRunner(
-        session!,
-        transaction!,
-        runFn!,
-        options
-      );
-
-      runner.run().then(release, err => {
-        if (isSessionNotFoundError(err)) {
-          release();
+    this.pool_.getWriteSession(
+      options!.transactionRequestOptions!,
+      (err, session?, transaction?) => {
+        if (err && isSessionNotFoundError(err as grpc.ServiceError)) {
           this.runTransaction(options, runFn!);
-        } else {
-          setImmediate(runFn!, err);
-          release();
+          return;
         }
-      });
-    });
+        if (err) {
+          runFn!(err as grpc.ServiceError);
+          return;
+        }
+
+        const release = this.pool_.release.bind(this.pool_, session!);
+        const runner = new TransactionRunner(
+          session!,
+          transaction!,
+          runFn!,
+          options
+        );
+
+        runner.run().then(release, err => {
+          if (isSessionNotFoundError(err)) {
+            release();
+            this.runTransaction(options, runFn!);
+          } else {
+            setImmediate(runFn!, err);
+            release();
+          }
+        });
+      }
+    );
   }
 
   runTransactionAsync<T = {}>(
@@ -2554,7 +2557,9 @@ class Database extends common.GrpcServiceObject {
     // eslint-disable-next-line no-constant-condition
     while (true) {
       try {
-        const [session, transaction] = await promisify(getWriteSession)();
+        const [session, transaction] = await promisify(getWriteSession)(
+          options!.transactionRequestOptions!
+        );
         const runner = new AsyncTransactionRunner<T>(
           session,
           transaction,
