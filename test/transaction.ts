@@ -311,7 +311,7 @@ describe('Transaction', () => {
         assert.deepStrictEqual(reqOpts.transaction, expectedTransaction);
       });
 
-      it('shoould set request tag if `singleUse', () => {
+      it('should set request tag if `singleUse', () => {
         const requestTag = 'foo';
         const request: ReadRequest = {txnRequestOptions: {requestTag}};
 
@@ -591,7 +591,7 @@ describe('Transaction', () => {
         assert.deepStrictEqual(reqOpts.transaction, expectedTransaction);
       });
 
-      it('shoould set request tag if `singleUse', () => {
+      it('should set request tag if `singleUse', () => {
         const requestTag = 'foo';
         const query = Object.assign({}, QUERY, {
           txnRequestOptions: {requestTag},

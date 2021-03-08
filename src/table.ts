@@ -44,29 +44,30 @@ export type CreateTableCallback = LongRunningCallback<Table>;
 export type DropTableResponse = UpdateSchemaResponse;
 export type DropTableCallback = UpdateSchemaCallback;
 
+interface MutateRowsOptions extends CommitOptions {
+  transactionRequestOptions?: Pick<TxnRequestOptions, 'transactionTag'>;
+}
+
 export type DeleteRowsCallback = CommitCallback;
 export type DeleteRowsResponse = CommitResponse;
-export interface DeleteRowsOptions extends CommitOptions {
-  transactionRequestOptions?: Pick<TxnRequestOptions, 'transactionTag'>;
+export type DeleteRowsOptions = MutateRowsOptions;
 }
 
 export type InsertRowsCallback = CommitCallback;
 export type InsertRowsResponse = CommitResponse;
-export type InsertRowsOptions = DeleteRowsOptions;
+export type InsertRowsOptions = MutateRowsOptions;
 
 export type ReplaceRowsCallback = CommitCallback;
 export type ReplaceRowsResponse = CommitResponse;
-export type ReplaceRowsOptions = DeleteRowsOptions;
+export type ReplaceRowsOptions = MutateRowsOptions;
 
 export type UpdateRowsCallback = CommitCallback;
 export type UpdateRowsResponse = CommitResponse;
-export type UpdateRowsOptions = DeleteRowsOptions;
+export type UpdateRowsOptions = MutateRowsOptions;
 
 export type UpsertRowsCallback = CommitCallback;
 export type UpsertRowsResponse = CommitResponse;
-export type UpsertRowsOptions = DeleteRowsOptions;
-
-type MutateRowsOptions = DeleteRowsOptions;
+export type UpsertRowsOptions = MutateRowsOptions;
 
 /**
  * Create a Table object to interact with a table in a Cloud Spanner
