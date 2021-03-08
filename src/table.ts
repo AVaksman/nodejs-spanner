@@ -51,7 +51,6 @@ interface MutateRowsOptions extends CommitOptions {
 export type DeleteRowsCallback = CommitCallback;
 export type DeleteRowsResponse = CommitResponse;
 export type DeleteRowsOptions = MutateRowsOptions;
-}
 
 export type InsertRowsCallback = CommitCallback;
 export type InsertRowsResponse = CommitResponse;
